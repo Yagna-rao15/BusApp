@@ -4,6 +4,6 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 
 interface LocationApi {
-    @POST("update-location5")
+    @POST("update-location")
     suspend fun sendLocation(@Body locationData: LocationData)
 }

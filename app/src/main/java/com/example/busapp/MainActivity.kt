@@ -1,6 +1,7 @@
 package com.example.busapp
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -10,27 +11,50 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import android.content.Intent
-import kotlinx.coroutines.MainScope
+import android.provider.Settings
+import androidx.appcompat.app.AlertDialog
 
 class MainActivity : AppCompatActivity() {
     private var isLocationServiceRunning by mutableStateOf(false)
+
+    private lateinit var requestPermissionsLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "onCreate called")
 
+        // Initialize permission launcher inside onCreate
+        requestPermissionsLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val allGranted = permissions.all { it.value }
+            if (allGranted) {
+                Log.d("MainActivity", "All permissions granted")
+                startLocationService()
+                isLocationServiceRunning = true
+            } else {
+                Log.e("MainActivity", "Permissions denied")
+                showPermissionDeniedDialog()
+            }
+        }
+
         setContent {
+            var serviceRunning by remember { mutableStateOf(isLocationServiceRunning) }
+
+            // Observe changes
+            LaunchedEffect(isLocationServiceRunning) {
+                serviceRunning = isLocationServiceRunning
+            }
+
             MainScreen(
-                isServiceRunning = isLocationServiceRunning,
+                isServiceRunning = serviceRunning,
                 onStartStopClick = { toggleLocationService() }
             )
         }
@@ -39,8 +63,8 @@ class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun toggleLocationService() {
         Log.d("MainActivity", "Toggle button clicked. Service running: $isLocationServiceRunning")
-        if (!isLocationServiceRunning) {
 
+        if (!isLocationServiceRunning) {
             if (checkPermissions()) {
                 startLocationService()
                 isLocationServiceRunning = true
@@ -66,27 +90,19 @@ class MainActivity : AppCompatActivity() {
             ) == PackageManager.PERMISSION_GRANTED
         } else true
 
-        if (!fineLocationGranted || !backgroundLocationGranted) {
+        return if (!fineLocationGranted || !backgroundLocationGranted) {
             val permissions = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 permissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             }
             Log.d("MainActivity", "Requesting permissions")
             requestPermissionsLauncher.launch(permissions.toTypedArray())
-            return false
+            false
+        } else {
+            Log.d("MainActivity", "Permissions already granted")
+            true
         }
-        return true
     }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private val requestPermissionsLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            Log.d("MainActivity", "Permissions result: $permissions")
-            if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-                startLocationService()
-                isLocationServiceRunning = true
-            }
-        }
 
     @RequiresApi(Build.VERSION_CODES.O)
     private fun startLocationService() {
@@ -101,12 +117,27 @@ class MainActivity : AppCompatActivity() {
         Log.d("MainActivity", "Service stopped")
     }
 
+    private fun showPermissionDeniedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Permissions Required")
+            .setMessage("This app needs location permissions to function properly. Please grant the necessary permissions in settings.")
+            .setPositiveButton("Go to Settings") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                intent.data = android.net.Uri.fromParts("package", packageName, null)
+                startActivity(intent)
+            }
+            .setNegativeButton("Exit") { _, _ ->
+                finishAffinity()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
     @Composable
     fun MainScreen(
         isServiceRunning: Boolean,
         onStartStopClick: () -> Unit
     ) {
-        // UI layout and logic
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -121,5 +152,4 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
 }
